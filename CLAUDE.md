@@ -5,6 +5,34 @@ built and tested first on macOS/Apple Silicon). Mimics the core behavior of
 the iPhone/iPad Camera app: pick a camera, take photos/videos at a chosen
 native resolution, and shoot an auto-adaptive time-lapse.
 
+## Session status / where to pick up next
+
+Last session got the app running end-to-end on macOS: window opens, camera
+enumerates, the permission popup fires correctly and preview activates once
+granted (confirmed working by the user against the rebuilt `CamControl.app`).
+
+**Verified working:** app launch, camera enumeration/switching, permission
+prompt + grant flow (the whole point of that session — see the macOS
+permission section below).
+
+**Written but not yet manually verified this session** — pick up here:
+- Photo capture end-to-end (button click → file actually saved to
+  `Pictures/CamControl/Photos`, correct chosen resolution).
+- Video capture end-to-end (start/stop, audio present, file plays back,
+  correct resolution/frame rate).
+- Time-lapse end-to-end (start → let it capture a few frames → stop →
+  confirm ffmpeg compile succeeds → MP4 plays back, raw stills got deleted).
+- Gallery window (opens, lists library files, previews both images and
+  videos, "Open Other File…" works for files outside the library).
+- Resolution dropdown actually repopulates correctly when switching between
+  Photo/Video/Time-Lapse modes and between cameras.
+- Not tested at all yet: Windows, Ubuntu (target platforms per the original
+  ask, but dev/test machine is macOS only so far).
+
+None of the above are known-broken — they just haven't been clicked through
+since the permission fix landed. Start a normal `uv run pyside6-deploy -c
+pysidedeploy.spec -f && open CamControl.app` cycle and work down this list.
+
 ## Stack
 
 - Python + `uv` (project/venv management, no `pip` in the venv — always use `uv add` / `uv run`)
