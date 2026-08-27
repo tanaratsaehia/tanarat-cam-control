@@ -7,31 +7,58 @@ native resolution, and shoot an auto-adaptive time-lapse.
 
 ## Session status / where to pick up next
 
-Last session got the app running end-to-end on macOS: window opens, camera
-enumerates, the permission popup fires correctly and preview activates once
-granted (confirmed working by the user against the rebuilt `CamControl.app`).
+Two sessions in. First got the app running end-to-end on macOS (window,
+camera enumeration, permission prompt/grant flow). Second session fixed two
+bugs found by manually testing the built `.app`, both now confirmed working
+by the user:
 
-**Verified working:** app launch, camera enumeration/switching, permission
-prompt + grant flow (the whole point of that session — see the macOS
-permission section below).
+- **Photo/time-lapse preview looked stretched when switching resolution.**
+  Root cause: `CameraSession.set_photo_resolution()` only told
+  `QImageCapture` the target pixel size, never reconfigured the camera's own
+  sensor format — so picking a resolution with a different aspect ratio than
+  whatever format the camera happened to be streaming caused Qt to stretch
+  the frame to fit instead of resizing correctly. Fixed by
+  `_match_camera_format_aspect()` in `camera_session.py`, which picks the
+  camera's `QCameraFormat` whose aspect ratio best matches the requested
+  still resolution and applies it via `setCameraFormat()` before capture.
+  Also added `_pending_photo_resolution` / `_pending_video_resolution`
+  bookkeeping so a resolution requested before the camera finishes
+  activating (permission grant is async) gets re-applied once it does,
+  instead of silently no-oping.
+- **Video "wasn't saving."** Turned out video recording was actually
+  working correctly the whole time (confirmed via `ffprobe` — valid
+  1080p60 H.264+AAC MP4s were landing in `~/Movies/CamControl/Videos`);
+  the real problem was the app gave no clear feedback that a save
+  succeeded. Fixed by making the status label bold and showing just the
+  filename (full path as a tooltip) for save confirmations in
+  `main_window.py`. Also added an explicit `QMediaFormat` (MPEG4/H264/AAC)
+  on the recorder instead of relying on Qt's auto-negotiation, as a
+  robustness improvement alongside this (not proven to have been the actual
+  cause, but cheap insurance).
+- Confirmed by the user: Photos, Videos, and Time-lapses all save to their
+  correct OS-standard folders (`Pictures/CamControl/{Photos,Timelapses}`,
+  `Movies/CamControl/Videos`) — the split was a deliberate earlier design
+  choice, re-confirmed with the user rather than changed.
 
-**Written but not yet manually verified this session** — pick up here:
-- Photo capture end-to-end (button click → file actually saved to
-  `Pictures/CamControl/Photos`, correct chosen resolution).
-- Video capture end-to-end (start/stop, audio present, file plays back,
-  correct resolution/frame rate).
-- Time-lapse end-to-end (start → let it capture a few frames → stop →
-  confirm ffmpeg compile succeeds → MP4 plays back, raw stills got deleted).
+**Verified working (manually, by the user, on macOS):** app launch, camera
+enumeration/switching, permission prompt + grant flow, photo capture with
+correct (non-stretched) resolution, video capture with audio saved to disk
+and playable, time-lapse resolution/preview no longer stretched.
+
+**Still not manually verified:**
+- Time-lapse full cycle specifically (start → capture several frames over
+  time → stop → ffmpeg compile → resulting MP4 plays back → raw stills
+  actually got deleted). Preview/resolution behavior is confirmed good;
+  the compile-and-cleanup tail end hasn't been explicitly exercised.
 - Gallery window (opens, lists library files, previews both images and
-  videos, "Open Other File…" works for files outside the library).
-- Resolution dropdown actually repopulates correctly when switching between
-  Photo/Video/Time-Lapse modes and between cameras.
+  videos, "Open Other File…" for files outside the library).
 - Not tested at all yet: Windows, Ubuntu (target platforms per the original
   ask, but dev/test machine is macOS only so far).
 
-None of the above are known-broken — they just haven't been clicked through
-since the permission fix landed. Start a normal `uv run pyside6-deploy -c
-pysidedeploy.spec -f && open CamControl.app` cycle and work down this list.
+Debugging technique worth remembering: when something "isn't working" but
+the code path looks right, verify at the filesystem/`ffprobe` level before
+assuming the capture pipeline is broken — the video bug turned out to be a
+missing UI confirmation, not a missing file.
 
 ## Stack
 

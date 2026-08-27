@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -86,6 +87,8 @@ class MainWindow(QMainWindow):
         self._shutter_button.clicked.connect(self._on_shutter_clicked)
 
         self._status_label = QLabel("Select a camera to begin.")
+        self._status_label.setStyleSheet("font-weight: 600;")
+        self._status_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
         gallery_button = QPushButton("Gallery")
         gallery_button.clicked.connect(self._open_gallery)
@@ -241,7 +244,7 @@ class MainWindow(QMainWindow):
         if not self._awaiting_photo:
             return  # a timelapse frame, not a manual photo
         self._awaiting_photo = False
-        self._set_status(f"Saved photo: {path}")
+        self._set_status(f"Saved photo: {Path(path).name}", tooltip=path)
 
     def _on_photo_capture_error(self, message: str) -> None:
         if self._awaiting_photo:
@@ -265,7 +268,7 @@ class MainWindow(QMainWindow):
             self._set_status(f"Recording… {_format_duration_ms(ms)}")
 
     def _on_recording_stopped(self, path: str) -> None:
-        self._set_status(f"Saved video: {path}")
+        self._set_status(f"Saved video: {Path(path).name}", tooltip=path)
 
     def _toggle_timelapse(self) -> None:
         if self._timelapse.is_running():
@@ -285,7 +288,7 @@ class MainWindow(QMainWindow):
         self._set_status(f"Time-lapse recording… {count} frames")
 
     def _on_timelapse_finished(self, path: str) -> None:
-        self._set_status(f"Saved time-lapse: {path}")
+        self._set_status(f"Saved time-lapse: {Path(path).name}", tooltip=path)
         self._shutter_button.setEnabled(True)
         self._set_ui_locked(False)
 
@@ -304,8 +307,9 @@ class MainWindow(QMainWindow):
         self._video_radio.setEnabled(not locked)
         self._timelapse_radio.setEnabled(not locked)
 
-    def _set_status(self, message: str) -> None:
+    def _set_status(self, message: str, tooltip: str | None = None) -> None:
         self._status_label.setText(message)
+        self._status_label.setToolTip(tooltip or "")
 
     def _open_gallery(self) -> None:
         if self._gallery_window is None:

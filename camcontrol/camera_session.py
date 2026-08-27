@@ -27,6 +27,7 @@ from PySide6.QtMultimedia import (
     QImageCapture,
     QMediaCaptureSession,
     QMediaDevices,
+    QMediaFormat,
     QMediaRecorder,
 )
 
@@ -71,6 +72,10 @@ class CameraSession(QObject):
         )
 
         self._recorder = QMediaRecorder(self)
+        media_format = QMediaFormat(QMediaFormat.FileFormat.MPEG4)
+        media_format.setVideoCodec(QMediaFormat.VideoCodec.H264)
+        media_format.setAudioCodec(QMediaFormat.AudioCodec.AAC)
+        self._recorder.setMediaFormat(media_format)
         self._capture_session.setRecorder(self._recorder)
         self._recorder.durationChanged.connect(self.recorderDurationChanged)
         self._recorder.errorOccurred.connect(
@@ -82,6 +87,8 @@ class CameraSession(QObject):
 
         self._camera: QCamera | None = None
         self._pending_device: QCameraDevice | None = None
+        self._pending_photo_resolution: QSize | None = None
+        self._pending_video_resolution: QSize | None = None
 
         # Qt 6.5+ requires explicitly requesting permission before a camera
         # will actually prompt the OS / start capturing — QCamera.start()
@@ -165,6 +172,14 @@ class CameraSession(QObject):
         camera.start()
         self.activeCameraChanged.emit(device)
 
+        # Re-apply whatever resolution was requested before the camera
+        # finished activating (permission grant is async, so this can be
+        # requested before there's an active QCamera to configure).
+        if self._pending_video_resolution is not None:
+            self.set_video_resolution(device, self._pending_video_resolution)
+        elif self._pending_photo_resolution is not None:
+            self._match_camera_format_aspect(self._pending_photo_resolution)
+
     def stop_camera(self) -> None:
         if self._camera is not None:
             self._camera.stop()
@@ -172,7 +187,32 @@ class CameraSession(QObject):
     # -- photo / timelapse stills -------------------------------------------
 
     def set_photo_resolution(self, resolution: QSize) -> None:
+        self._pending_photo_resolution = resolution
+        self._pending_video_resolution = None
         self._image_capture.setResolution(resolution)
+        self._match_camera_format_aspect(resolution)
+
+    def _match_camera_format_aspect(self, resolution: QSize) -> None:
+        """Reconfigure the camera's sensor format to match the requested
+        still resolution's aspect ratio, so QImageCapture resizes into that
+        resolution instead of stretching a differently-shaped frame into it.
+        """
+        if self._camera is None or resolution.height() == 0:
+            return
+        device = self._camera.cameraDevice()
+        formats = device.videoFormats()
+        if not formats:
+            return
+        target_aspect = resolution.width() / resolution.height()
+
+        def aspect_diff(fmt) -> float:
+            size = fmt.resolution()
+            if size.height() == 0:
+                return float("inf")
+            return abs((size.width() / size.height()) - target_aspect)
+
+        best = min(formats, key=lambda f: (round(aspect_diff(f), 3), -f.resolution().width() * f.resolution().height()))
+        self._camera.setCameraFormat(best)
 
     def capture_photo(self, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -181,6 +221,8 @@ class CameraSession(QObject):
     # -- video -------------------------------------------------------------
 
     def set_video_resolution(self, device: QCameraDevice, resolution: QSize) -> None:
+        self._pending_video_resolution = resolution
+        self._pending_photo_resolution = None
         if self._camera is None:
             return
         candidates = [f for f in device.videoFormats() if f.resolution() == resolution]
